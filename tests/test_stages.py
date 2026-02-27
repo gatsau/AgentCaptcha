@@ -148,7 +148,8 @@ class TestStage4Consistency(unittest.TestCase):
         ]
 
     def test_consistent_sessions(self):
-        sessions = self._make_sessions(10, interval=3600.0)
+        # Use 2-hour intervals so 10 sessions span 18h → hour_std > 3.0
+        sessions = self._make_sessions(10, interval=7200.0)
         result = analyze_sessions(sessions)
         self.assertTrue(result["consistent"])
 
