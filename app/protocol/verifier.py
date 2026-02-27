@@ -18,16 +18,20 @@ async def verify(ws_send, ws_recv, agent_id: str | None = None) -> VerificationR
     timestamp = time.time()
     stages_passed: list[int] = []
 
+    # Pre-create a session row so Stage 2 can write challenge_history against it.
+    # We'll update it at the end — for now record stage 0, not passed.
+    session_id = await insert_session(
+        agent_id=agent_id,
+        stage_reached=0,
+        timestamp=timestamp,
+        timings={},
+        passed=False,
+        reject_reason="in_progress",
+    )
+
     async def _reject(result: VerificationResult) -> VerificationResult:
         await ws_send({"type": "result", "verdict": "REJECT", "reason": result.reason})
-        await insert_session(
-            agent_id=agent_id,
-            stage_reached=session.stage_reached,
-            timestamp=timestamp,
-            timings=session.timings,
-            passed=False,
-            reject_reason=result.reason,
-        )
+        await _update_session(session_id, session, passed=False, reject_reason=result.reason)
         return result
 
     # Stage 1 — Proof of Work
@@ -36,8 +40,8 @@ async def verify(ws_send, ws_recv, agent_id: str | None = None) -> VerificationR
         return await _reject(result)
     stages_passed.append(1)
 
-    # Stage 2 — Semantic decision challenges
-    result = await stage2_decisions.run(session, ws_send, ws_recv)
+    # Stage 2 — Semantic decision challenges (passes session_id for history writes)
+    result = await stage2_decisions.run(session, ws_send, ws_recv, session_id=session_id)
     if result is not None:
         return await _reject(result)
     stages_passed.append(2)
@@ -56,13 +60,7 @@ async def verify(ws_send, ws_recv, agent_id: str | None = None) -> VerificationR
 
     token = create_token(agent_id=agent_id, stages_passed=stages_passed)
 
-    await insert_session(
-        agent_id=agent_id,
-        stage_reached=4,
-        timestamp=timestamp,
-        timings=session.timings,
-        passed=True,
-    )
+    await _update_session(session_id, session, passed=True, reject_reason=None)
 
     await ws_send({
         "type": "result",
@@ -72,3 +70,28 @@ async def verify(ws_send, ws_recv, agent_id: str | None = None) -> VerificationR
     })
 
     return VerificationResult.accept(token=token, stages_passed=stages_passed)
+
+
+async def _update_session(
+    session_id: int,
+    session: Session,
+    passed: bool,
+    reject_reason: str | None,
+) -> None:
+    """Overwrite the pre-created session row with final state."""
+    import json
+    from app.database import get_db
+    db = await get_db()
+    await db.execute(
+        """UPDATE sessions
+           SET stage_reached=?, timings=?, passed=?, reject_reason=?
+           WHERE id=?""",
+        (
+            session.stage_reached,
+            json.dumps(session.timings),
+            int(passed),
+            reject_reason,
+            session_id,
+        ),
+    )
+    await db.commit()

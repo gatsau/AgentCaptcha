@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  server:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-random-32-char-secret}
+      - DATABASE_URL=/app/data/agentcaptcha.db
+      - POW_DIFFICULTY=${POW_DIFFICULTY:-4}
+      - POW_TIMEOUT_MS=${POW_TIMEOUT_MS:-200}
+      - DECISION_ROUNDS=${DECISION_ROUNDS:-10}
+      - DECISION_TIMEOUT_S=${DECISION_TIMEOUT_S:-1.5}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-10}
+      - RATE_LIMIT_WINDOW_S=${RATE_LIMIT_WINDOW_S:-60}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/status')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

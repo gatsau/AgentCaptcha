@@ -1,4 +1,4 @@
-"""FastAPI application with lifespan, WebSocket, and REST routes."""
+"""FastAPI application with lifespan, rate limiting, WebSocket, and REST routes."""
 import logging
 from contextlib import asynccontextmanager
 
@@ -7,6 +7,7 @@ from fastapi import FastAPI, WebSocket
 from app.api.routes import router
 from app.api.websocket import websocket_verify
 from app.database import close_db, get_db
+from app.middleware.rate_limit import RateLimitMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +20,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("AgentCaptcha starting — initialising database")
     await get_db()
+    from app.config import settings
+    if settings.use_mock_challenges:
+        logger.warning(
+            "ANTHROPIC_API_KEY not set — using static challenge bank for Stage 2"
+        )
     yield
     logger.info("AgentCaptcha shutting down — closing database")
     await close_db()
@@ -31,6 +37,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RateLimitMiddleware)
 app.include_router(router)
 
 

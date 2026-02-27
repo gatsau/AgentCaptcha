@@ -71,11 +71,39 @@ async def insert_session(
     return cursor.lastrowid
 
 
+async def insert_challenge_history(
+    session_id: int,
+    round_num: int,
+    challenge_text: str,
+    response_text: str,
+    correct: bool,
+    response_time_s: float,
+) -> None:
+    db = await get_db()
+    await db.execute(
+        """INSERT INTO challenge_history
+           (session_id, round_num, challenge_text, response_text, correct, response_time_s)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (session_id, round_num, challenge_text, response_text, int(correct), response_time_s),
+    )
+    await db.commit()
+
+
 async def fetch_agent_sessions(agent_id: str) -> list[dict]:
     db = await get_db()
     cursor = await db.execute(
         "SELECT * FROM sessions WHERE agent_id = ? ORDER BY timestamp ASC",
         (agent_id,),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def fetch_challenge_history(session_id: int) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM challenge_history WHERE session_id = ? ORDER BY round_num ASC",
+        (session_id,),
     )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
